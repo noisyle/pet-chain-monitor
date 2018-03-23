@@ -1,19 +1,40 @@
 <template>
   <div id="wrapper">
+    <div class="tabs" style="margin-top: 7px;">
+      <ul>
+        <li :class="{'is-active' : currentTab === 'filtered'}"><a @click="currentTab = 'filtered'">筛选</a></li>
+        <li :class="{'is-active' : currentTab === 'log'}"><a @click="currentTab = 'log'">日志</a></li>
+      </ul>
+    </div>
     <div class="toolbar has-text-right">
       <button class="button" :class="isRunning ? 'is-warning': 'is-primary'" @click="toggle()">{{isRunning ? '停止' : '开始'}}</button>
       <button class="button is-primary" @click="openSettings()">设置</button>
     </div>
 
     <div class="main">
-      <table class="table is-bordered is-striped is-narrow is-hoverable is-fullwidth">
+      <table v-show="currentTab === 'filtered'" class="table is-bordered is-striped is-narrow is-hoverable is-fullwidth">
         <tbody>
-          <tr v-for="pet in tableData" :key="pet.petId">
+          <tr v-for="pet in filteredData" :key="pet.petId">
             <td class="has-text-centered">{{pet.desc}}{{pet.id | formatId}}</td>
             <td class="has-text-centered"><span class="tag" :class="rareStyles[pet.rareDegree]">{{pet.rareDegree | rareName}} ({{pet.rareDegree}})</span></td>
             <td class="has-text-right">{{pet.amount}}</td>
-            <td class="has-text-centered">{{pet.timestamp}}</td>
+            <td class="has-text-centered">第{{pet.generation}}代</td>
+            <td class="has-text-centered">{{pet.isCooling?'休息中':'正常'}}</td>
+            <td class="has-text-centered">{{pet.timestamp | formatDate}}</td>
             <td class="has-text-centered"><a class="button is-primary is-small" @click="open(pet)">前往</a></td>
+          </tr>
+        </tbody>
+      </table>
+      <table v-show="currentTab === 'log'" class="table is-bordered is-striped is-narrow is-hoverable is-fullwidth">
+        <tbody>
+          <tr v-for="log in logData" :key="log.logId">
+            <td class="has-text-centered">{{log.data.desc}}{{log.data.id | formatId}}</td>
+            <td class="has-text-centered"><span class="tag" :class="rareStyles[log.data.rareDegree]">{{log.data.rareDegree | rareName}} ({{log.data.rareDegree}})</span></td>
+            <td class="has-text-right">{{log.data.amount}}</td>
+            <td class="has-text-centered">第{{log.data.generation}}代</td>
+            <td class="has-text-centered">{{log.data.isCooling?'休息中':'正常'}}</td>
+            <td class="has-text-centered">{{log.data.timestamp | formatDate}}</td>
+            <td class="has-text-centered"><a class="button is-primary is-small" @click="open(log)">前往</a></td>
           </tr>
         </tbody>
       </table>
@@ -42,12 +63,17 @@
 
           <div class="field is-horizontal">
             <div class="field-label is-normal">
-              <label class="label">每次查询</label>
+              <label class="label">稀有度</label>
             </div>
             <div class="field-body">
               <div class="field">
                 <div class="control">
-                  <input class="input" type="number" placeholder="每次查询条数" v-model="settings.pageSize">
+                  <div class="select">
+                    <select v-model="settings.rareDegree">
+                      <option value="-1">全部</option>
+                      <option v-for="(style, index) in rareStyles" :key="index" :value="index">{{index | rareName}}</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -55,21 +81,14 @@
 
           <div class="field is-horizontal">
             <div class="field-label is-normal">
-              <label class="label">售价阈值</label>
+              <label class="label">最高售价</label>
             </div>
             <div class="field-body">
-              <table class="table is-bordered is-striped is-narrow is-hoverable is-fullwidth">
-                <thead>
-                  <tr>
-                    <th v-for="(style, index) in rareStyles" :key="style" class="has-text-centered"><span class="tag" :class="style">{{index | rareName}}</span></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td v-for="(rare, index) in settings.thresholds" :key="index"><input type="number" class="input is-small" name="threshold" v-model="settings.thresholds[index]"></td>
-                  </tr>
-                </tbody>
-              </table>
+              <div class="field">
+                <div class="control">
+                  <input class="input" type="number" v-model="settings.threshold">
+                </div>
+              </div>
             </div>
           </div>
         </section>
@@ -93,12 +112,16 @@ export default {
       isRunning: false,
       isSettingsOpen: false,
       settings: {
-        interval: 2000,
-        pageSize: 20,
-        thresholds: [0, 0, 0, 0, 0, 0]
+        interval: 1000,
+        pageSize: 10,
+        rareDegree: -1,
+        threshold: 0
+        // thresholds: [0, 0, 0, 0, 0, 0]
       },
-      tableData: [],
-      tableDataMap: {},
+      currentTab: 'filtered',
+      filteredData: [],
+      filteredDataMap: {},
+      logData: [],
       rareStyles: rareStyles
     }
   },
@@ -110,6 +133,9 @@ export default {
     toggle () {
       this.isRunning = !this.isRunning
       if (this.isRunning) {
+        if (runner !== undefined) {
+          window.clearInterval(runner)
+        }
         runner = window.setInterval(this.query, this.settings.interval)
       } else {
         window.clearInterval(runner)
@@ -118,37 +144,44 @@ export default {
     },
     judge (pet) {
       let result = false
-      const thresholds = this.settings.thresholds
-      for (let i = 0; i < thresholds.length; i++) {
-        const threshold = parseFloat(thresholds[i])
-        if (threshold > 0 && pet.rareDegree >= i && parseFloat(pet.amount) <= threshold) {
-          result = true
-          break
-        }
+      const threshold = parseFloat(this.settings.threshold)
+      if (threshold > 0 && parseFloat(pet.amount) <= threshold) {
+        result = true
       }
       return result
     },
     query () {
+      const filterCondition = { '6': '1' }
+      if (this.settings.rareDegree > -1) {
+        filterCondition['1'] = this.settings.rareDegree
+      }
       this.$http.post('https://pet-chain.baidu.com/data/market/queryPetsOnSale', {
         'pageNo': 1,
         'pageSize': this.settings.pageSize,
         'querySortType': 'CREATETIME_DESC',
+        'filterCondition': JSON.stringify(filterCondition),
         'petIds': [],
         'requestId': new Date().getTime(),
         'appId': 1
       }).then(res => {
         if (res.data.data.petsOnSale) {
           res.data.data.petsOnSale.forEach(pet => {
+            pet.timestamp = new Date(res.data.timestamp)
             if (this.judge(pet)) {
-              if (this.tableDataMap[pet.petId]) {
-                this.tableDataMap[pet.petId].amount = pet.amount
+              if (this.filteredDataMap[pet.petId]) {
+                this.filteredDataMap[pet.petId].amount = pet.amount
               } else {
-                pet.timestamp = res.data.timestamp
-                this.tableDataMap[pet.petId] = pet
-                this.tableData.unshift(pet)
+                this.filteredDataMap[pet.petId] = pet
+                this.filteredData.unshift(pet)
               }
             }
+
+            this.logData.push({logId: pet.petId + '_' + pet.timestamp, data: pet})
           })
+
+          if (this.logData.length > 1000) {
+            this.logData.splice(0, this.logData.length - 1000)
+          }
         }
       })
     },
@@ -157,13 +190,37 @@ export default {
     },
     applySettings () {
       this.isSettingsOpen = false
-      window.clearInterval(runner)
+      if (runner !== undefined) {
+        window.clearInterval(runner)
+      }
       runner = window.setInterval(this.query, this.settings.interval)
+      console.log('Settings: %O', this.settings)
     }
   },
   filters: {
     formatId (value) {
       return '0000000000'.substr(0, 8 - value.toString().length) + value
+    },
+    formatDate (date, fmt) {
+      fmt || (fmt = 'yyyy-MM-dd hh:mm:ss')
+      var o = {
+        'M+': date.getMonth() + 1,
+        'd+': date.getDate(),
+        'h+': date.getHours(),
+        'm+': date.getMinutes(),
+        's+': date.getSeconds(),
+        'q+': Math.floor((date.getMonth() + 3) / 3),
+        'S': date.getMilliseconds()
+      }
+      if (/(y+)/.test(fmt)) {
+        fmt = fmt.replace(RegExp.$1, (date.getFullYear() + '').substr(4 - RegExp.$1.length))
+      }
+      for (var k in o) {
+        if (new RegExp('(' + k + ')').test(fmt)) {
+          fmt = fmt.replace(RegExp.$1, (RegExp.$1.length === 1) ? (o[k]) : (('00' + o[k]).substr(('' + o[k]).length)))
+        }
+      }
+      return fmt
     },
     rareName (value) {
       return rareNames[value]
@@ -186,10 +243,8 @@ body {
 .toolbar {
   position: fixed;
   top: 0;
-  left: 0;
-  width: 100%;
+  right: 0;
   padding: 5px;
-  border-bottom: 2px solid #ccc;
 }
 .main {
   position: fixed;

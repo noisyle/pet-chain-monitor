@@ -101,6 +101,10 @@
 </template>
 
 <script>
+'use strict'
+
+import { ipcRenderer } from 'electron'
+
 let runner
 const rareNames = ['普通', '稀有', '卓越', '史诗', '神话', '传说']
 const rareStyles = ['is-light', 'is-success', 'is-info', 'is-link', 'is-warning', 'is-danger']
@@ -173,6 +177,7 @@ export default {
               } else {
                 this.filteredDataMap[pet.petId] = pet
                 this.filteredData.unshift(pet)
+                ipcRenderer.send('notice', pet)
               }
             }
 
@@ -194,7 +199,6 @@ export default {
         window.clearInterval(runner)
       }
       runner = window.setInterval(this.query, this.settings.interval)
-      console.log('Settings: %O', this.settings)
     }
   },
   filters: {
@@ -203,7 +207,7 @@ export default {
     },
     formatDate (date, fmt) {
       fmt || (fmt = 'yyyy-MM-dd hh:mm:ss')
-      var o = {
+      const o = {
         'M+': date.getMonth() + 1,
         'd+': date.getDate(),
         'h+': date.getHours(),
@@ -215,7 +219,7 @@ export default {
       if (/(y+)/.test(fmt)) {
         fmt = fmt.replace(RegExp.$1, (date.getFullYear() + '').substr(4 - RegExp.$1.length))
       }
-      for (var k in o) {
+      for (let k in o) {
         if (new RegExp('(' + k + ')').test(fmt)) {
           fmt = fmt.replace(RegExp.$1, (RegExp.$1.length === 1) ? (o[k]) : (('00' + o[k]).substr(('' + o[k]).length)))
         }

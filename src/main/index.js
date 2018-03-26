@@ -1,6 +1,6 @@
 'use strict'
 
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification } from 'electron'
 
 /**
  * Set `__static` path to static files in production
@@ -45,6 +45,13 @@ app.on('window-all-closed', () => {
 app.on('activate', () => {
   if (mainWindow === null) {
     createWindow()
+  }
+})
+
+ipcMain.on('notice', (event, arg) => {
+  if (Notification.isSupported()) {
+    console.log(arg)
+    new Notification({title: ['普通', '稀有', '卓越', '史诗', '神话', '传说'][arg.rareDegree], body: arg.amount}).show()
   }
 })
 

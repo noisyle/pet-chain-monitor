@@ -20,6 +20,7 @@
             <td class="has-text-right">{{pet.amount}}</td>
             <td class="has-text-centered">第{{pet.generation}}代</td>
             <td class="has-text-centered">{{pet.isCooling?'休息中':'正常'}}</td>
+            <td class="has-text-centered">{{pet.coolingInterval}}</td>
             <td class="has-text-centered">{{pet.timestamp | formatDate}}</td>
             <td class="has-text-centered"><a class="button is-primary is-small" @click="open(pet)">前往</a></td>
           </tr>
@@ -63,13 +64,13 @@
 
           <div class="field is-horizontal">
             <div class="field-label is-normal">
-              <label class="label">稀有度</label>
+              <label class="label">最小稀有度</label>
             </div>
             <div class="field-body">
               <div class="field">
                 <div class="control">
                   <div class="select">
-                    <select v-model="settings.rareDegree">
+                    <select v-model="settings.filter.rareDegree">
                       <option value="-1">全部</option>
                       <option v-for="(style, index) in rareStyles" :key="index" :value="index">{{index | rareName}}</option>
                     </select>
@@ -86,7 +87,42 @@
             <div class="field-body">
               <div class="field">
                 <div class="control">
-                  <input class="input" type="number" v-model="settings.threshold">
+                  <input class="input" type="number" v-model="settings.filter.threshold">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field is-horizontal">
+            <div class="field-label is-normal">
+              <label class="label">最大代数</label>
+            </div>
+            <div class="field-body">
+              <div class="field">
+                <div class="control">
+                  <input class="input" type="number" v-model="settings.filter.generation">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field is-horizontal">
+            <div class="field-label is-normal">
+              <label class="label">休息时间</label>
+            </div>
+            <div class="field-body">
+              <div class="field">
+                <div class="control">
+                  <input class="input" type="number" v-model="settings.filter.cooling">
+                </div>
+              </div>
+              <div class="field">
+                <div class="control">
+                  <div class="select">
+                    <select v-model="settings.filter.coolingInterval">
+                      <option v-for="(value, name) in coolingInterval" :key="value" :value="name">{{name}}</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
@@ -108,6 +144,13 @@ import { ipcRenderer } from 'electron'
 let runner
 const rareNames = ['普通', '稀有', '卓越', '史诗', '神话', '传说']
 const rareStyles = ['is-light', 'is-success', 'is-info', 'is-link', 'is-warning', 'is-danger']
+const coolingInterval = {
+  '分钟': 1,
+  '天': 24 * 60,
+  '周': 7 * 24 * 60,
+  '个月': 30 * 24 * 60,
+  '年': 365 * 24 * 60
+}
 
 export default {
   name: 'home',
@@ -116,17 +159,23 @@ export default {
       isRunning: false,
       isSettingsOpen: false,
       settings: {
-        interval: 1000,
+        interval: 2000,
         pageSize: 10,
-        rareDegree: -1,
-        threshold: 0
+        filter: {
+          rareDegree: -1,
+          threshold: 0,
+          generation: -1,
+          cooling: 0,
+          coolingInterval: '分钟'
+        }
         // thresholds: [0, 0, 0, 0, 0, 0]
       },
       currentTab: 'filtered',
       filteredData: [],
       filteredDataMap: {},
       logData: [],
-      rareStyles: rareStyles
+      rareStyles: rareStyles,
+      coolingInterval: coolingInterval
     }
   },
   methods: {
@@ -147,30 +196,57 @@ export default {
       }
     },
     judge (pet) {
-      let result = false
-      const threshold = parseFloat(this.settings.threshold)
-      if (threshold > 0 && parseFloat(pet.amount) <= threshold) {
-        result = true
+      let result = true
+      const threshold = parseFloat(this.settings.filter.threshold)
+      if (threshold > 0 && parseFloat(pet.amount) > threshold) {
+        result = false
+      }
+      const rareDegree = parseFloat(this.settings.filter.rareDegree)
+      if (rareDegree > 0 && parseFloat(pet.rareDegree) < rareDegree) {
+        result = false
+      }
+      const generation = parseFloat(this.settings.filter.generation)
+      if (generation > -1 && parseFloat(pet.generation) > generation) {
+        result = false
+      }
+      const cooling = parseInt(coolingInterval[this.settings.filter.coolingInterval] * this.settings.filter.cooling)
+      if (parseFloat(pet.cooling) > cooling) {
+        result = false
       }
       return result
     },
+    intervalString2Number (str) {
+      let result = null
+      Object.keys(coolingInterval).forEach(i => {
+        if (str.indexOf(i) > -1) {
+          result = parseInt(parseFloat(str.replace(i, '')) * coolingInterval[i])
+        }
+      })
+      return result
+    },
     query () {
-      const filterCondition = { '6': '1' }
-      if (this.settings.rareDegree > -1) {
-        filterCondition['1'] = this.settings.rareDegree
-      }
       this.$http.post('https://pet-chain.baidu.com/data/market/queryPetsOnSale', {
+        'appId': 1,
+        'filterCondition': '{}',
+        'lastAmount': '',
+        'lastRareDegree': '',
+        'nounce': null,
         'pageNo': 1,
         'pageSize': this.settings.pageSize,
-        'querySortType': 'CREATETIME_DESC',
-        'filterCondition': JSON.stringify(filterCondition),
         'petIds': [],
+        'phoneType': 'ios',
+        'querySortType': 'CREATETIME_DESC',
         'requestId': new Date().getTime(),
-        'appId': 1
+        'timeStamp': null,
+        'token': null,
+        'tpl': '',
+        'type': null
       }).then(res => {
-        if (res.data.data.petsOnSale) {
+        if (res.data.data) {
+          const ts = new Date(res.data.timestamp)
           res.data.data.petsOnSale.forEach(pet => {
-            pet.timestamp = new Date(res.data.timestamp)
+            pet.timestamp = ts
+            pet.cooling = this.intervalString2Number(pet.coolingInterval)
             if (this.judge(pet)) {
               if (this.filteredDataMap[pet.petId]) {
                 this.filteredDataMap[pet.petId].amount = pet.amount

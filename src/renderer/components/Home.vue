@@ -34,6 +34,7 @@
             <td class="has-text-right">{{log.data.amount}}</td>
             <td class="has-text-centered">第{{log.data.generation}}代</td>
             <td class="has-text-centered">{{log.data.isCooling?'休息中':'正常'}}</td>
+            <td class="has-text-centered">{{log.data.coolingInterval}}</td>
             <td class="has-text-centered">{{log.data.timestamp | formatDate}}</td>
             <td class="has-text-centered"><a class="button is-primary is-small" @click="open(log)">前往</a></td>
           </tr>
@@ -270,11 +271,11 @@ export default {
       this.isSettingsOpen = true
     },
     applySettings () {
-      this.isSettingsOpen = false
       if (runner !== undefined) {
         window.clearInterval(runner)
+        runner = window.setInterval(this.query, this.settings.interval)
       }
-      runner = window.setInterval(this.query, this.settings.interval)
+      this.isSettingsOpen = false
     }
   },
   filters: {
